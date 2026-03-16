@@ -11,7 +11,7 @@ const generateToken = (id) => {
 // @access  Public
 const registerUser = async (req, res) => {
     try {
-        const { name, email, password, role } = req.body;
+        const { name, email, password, phone, role } = req.body;
 
         if (!name || !email || !password) {
             return res.status(400).json({ message: 'Please add all required fields' });
@@ -32,6 +32,7 @@ const registerUser = async (req, res) => {
             name,
             email,
             password: hashedPassword,
+            phone,
             role: role || 'user'
         });
 
@@ -41,6 +42,7 @@ const registerUser = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                avatar: user.avatar,
                 token: generateToken(user._id),
             });
         } else {
@@ -77,6 +79,7 @@ const loginUser = async (req, res) => {
                 name: adminUser.name,
                 email: adminUser.email,
                 role: adminUser.role,
+                avatar: adminUser.avatar,
                 token: generateToken(adminUser._id),
             });
         }
@@ -89,6 +92,7 @@ const loginUser = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                avatar: user.avatar,
                 token: generateToken(user._id),
             });
         } else {
@@ -106,8 +110,73 @@ const getMe = async (req, res) => {
     res.status(200).json(req.user);
 };
 
+const imageKitService = require('../services/imageKitService');
+
+// @desc    Update user profile & avatar
+// @route   PUT /api/auth/profile
+// @access  Private
+const updateProfile = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        user.name = req.body.name || user.name;
+        user.phone = req.body.phone || user.phone;
+
+        if (req.file) {
+            const uploadRes = await imageKitService.upload({
+                file: req.file.buffer,
+                fileName: `avatar-${user._id}-${Date.now()}`,
+                folder: '/dineease/avatars'
+            });
+            user.avatar = uploadRes.url;
+        }
+
+        const updatedUser = await user.save();
+
+        res.json({
+            _id: updatedUser.id,
+            name: updatedUser.name,
+            email: updatedUser.email,
+            phone: updatedUser.phone,
+            role: updatedUser.role,
+            avatar: updatedUser.avatar,
+            token: generateToken(updatedUser._id),
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Update user password
+// @route   PUT /api/auth/password
+// @access  Private
+const updatePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const user = await User.findById(req.user.id);
+
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Incorrect current password' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(newPassword, salt);
+        await user.save();
+
+        res.json({ message: 'Password updated successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     registerUser,
     loginUser,
     getMe,
+    updateProfile,
+    updatePassword
 };

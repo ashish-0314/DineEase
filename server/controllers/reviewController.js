@@ -1,5 +1,6 @@
 const Review = require('../models/Review');
 const Restaurant = require('../models/Restaurant');
+const Booking = require('../models/Booking');
 const upload = require('../middlewares/uploadMiddleware');
 const { uploadToImageKit } = require('./restaurantController'); // Assuming we centralize ImageKit or duplicate logic
 
@@ -23,6 +24,18 @@ const uploadMedia = async (fileBuffer, fileName) => {
 const createReview = async (req, res) => {
     try {
         const { restaurantId, rating, comment } = req.body;
+
+        // Genuine Review Check
+        const hasBooked = await Booking.findOne({
+            userId: req.user._id,
+            restaurantId,
+            status: { $in: ['confirmed', 'completed'] }
+        });
+
+        if (!hasBooked && req.user.role !== 'admin') {
+            return res.status(403).json({ message: 'You can only review restaurants you have booked a table with.' });
+        }
+
         let imageUrl = '';
 
         if (req.file) {
@@ -87,8 +100,33 @@ const deleteReview = async (req, res) => {
     }
 };
 
+// @desc    Check eligibility for review
+// @route   GET /api/reviews/eligibility/:restaurantId
+// @access  Private
+const checkReviewEligibility = async (req, res) => {
+    try {
+        const hasBooked = await Booking.findOne({
+            userId: req.user._id,
+            restaurantId: req.params.restaurantId,
+            status: { $in: ['confirmed', 'completed'] }
+        });
+
+        const hasReviewed = await Review.findOne({
+            userId: req.user._id,
+            restaurantId: req.params.restaurantId
+        });
+
+        const isEligible = !!hasBooked && !hasReviewed;
+
+        res.status(200).json({ eligible: isEligible, hasReviewed: !!hasReviewed });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     createReview,
     getRestaurantReviews,
-    deleteReview
+    deleteReview,
+    checkReviewEligibility
 };

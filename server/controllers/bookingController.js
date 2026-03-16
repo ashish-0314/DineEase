@@ -1,13 +1,32 @@
 const Booking = require('../models/Booking');
 const Restaurant = require('../models/Restaurant');
-const { sendSMS } = require('../services/smsService');
+const User = require('../models/User');
+const { sendEmail } = require('../services/emailService');
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 
 // @desc    Create a new booking
 // @route   POST /api/bookings
 // @access  Private (User)
 const createBooking = async (req, res) => {
     try {
-        const { restaurantId, date, timeSlot, numberOfGuests, specialRequest } = req.body;
+        const { restaurantId, date, timeSlot, numberOfGuests, specialRequest, preOrderedItems, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+            return res.status(400).json({ message: 'Payment details missing. Please complete payment.' });
+        }
+
+        // Verify Razorpay Signature
+        const body = razorpay_order_id + "|" + razorpay_payment_id;
+        const expectedSignature = crypto
+            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'your_razorpay_key_secret')
+            .update(body.toString())
+            .digest('hex');
+
+        // We will only mock fail if keys aren't set
+        if (expectedSignature !== razorpay_signature && process.env.RAZORPAY_KEY_SECRET !== 'your_razorpay_key_secret') {
+            return res.status(400).json({ message: 'Invalid payment signature' });
+        }
 
         const restaurant = await Restaurant.findById(restaurantId);
         if (!restaurant) {
@@ -47,15 +66,66 @@ const createBooking = async (req, res) => {
             timeSlot,
             numberOfGuests,
             specialRequest,
+            preOrderedItems: preOrderedItems || [],
+            payment: {
+                status: 'paid',
+                transactionId: razorpay_payment_id,
+                orderId: razorpay_order_id
+            },
             status: 'confirmed'
         });
 
         const savedBooking = await booking.save();
 
-        // Send SMS Notification (assuming User has a phone field or hardcode for trial)
-        // NOTE: In Twilio Free Trial, you can only send to verified numbers.
-        const messageBody = `Confirmed! Your table at ${restaurant.name} is booked for ${date} at ${timeSlot} for ${numberOfGuests} guests.`;
-        // await sendSMS("+1234567890", messageBody); // Requires real number
+        // Find Owner to notify them as well
+        const owner = await User.findById(restaurant.ownerId);
+
+        // Generate Pre-order HTML string for the email
+        let preOrderHtml = '';
+        if (preOrderedItems && preOrderedItems.length > 0) {
+            preOrderHtml = `
+                <h3>Pre-ordered Menu Items:</h3>
+                <ul>
+                    ${preOrderedItems.map(item => `<li>${item.quantity}x ${item.name} ($${item.price})</li>`).join('')}
+                </ul>
+            `;
+        }
+
+        // 1. Send Email to Diner
+        const user = await User.findById(req.user._id);
+        if (user && user.email) {
+            const subjectToDiner = `Booking Confirmed: ${restaurant.name}`;
+            const htmlToDiner = `
+                <h2>Your table is confirmed!</h2>
+                <p>Hello ${user.name}, your table at <strong>${restaurant.name}</strong> is booked.</p>
+                <ul>
+                    <li><strong>Date:</strong> ${new Date(bookingDate).toDateString()}</li>
+                    <li><strong>Time:</strong> ${timeSlot}</li>
+                    <li><strong>Guests:</strong> ${numberOfGuests}</li>
+                </ul>
+                ${preOrderHtml}
+                <p>Thank you for using DineEase!</p>
+            `;
+            await sendEmail(user.email, subjectToDiner, htmlToDiner);
+        }
+
+        // 2. Send Email to Restaurant Owner
+        if (owner && owner.email) {
+            const subjectToOwner = `New Booking Received: ${timeSlot} on ${new Date(bookingDate).toDateString()}`;
+            const htmlToOwner = `
+                <h2>New Table Reservation</h2>
+                <p>You have a new booking from <strong>${user.name}</strong>.</p>
+                <ul>
+                    <li><strong>Date:</strong> ${new Date(bookingDate).toDateString()}</li>
+                    <li><strong>Time:</strong> ${timeSlot}</li>
+                    <li><strong>Guests:</strong> ${numberOfGuests}</li>
+                    <li><strong>Special Request:</strong> ${specialRequest || 'None'}</li>
+                </ul>
+                ${preOrderHtml}
+                <p>Log into your Owner Dashboard to view more details.</p>
+            `;
+            await sendEmail(owner.email, subjectToOwner, htmlToOwner);
+        }
 
         res.status(201).json(savedBooking);
     } catch (error) {
@@ -115,9 +185,39 @@ const cancelBooking = async (req, res) => {
     }
 };
 
+// @desc    Create Razorpay Order
+// @route   POST /api/bookings/create-order
+// @access  Private
+const createOrder = async (req, res) => {
+    try {
+        if (!process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID.includes('your_')) {
+            // Return a mock order for dev mode if keys are not set
+            return res.status(200).json({ id: 'order_dev_' + Date.now(), amount: 10000, currency: 'INR' });
+        }
+
+        const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET
+        });
+
+        const options = {
+            amount: 100 * 100, // ₹100 in paise
+            currency: 'INR',
+            receipt: `rcpt_${Date.now()}`
+        };
+
+        const order = await razorpay.orders.create(options);
+        res.status(200).json(order);
+    } catch (error) {
+        console.error("Razorpay Error:", error);
+        res.status(500).json({ message: 'Failed to create payment order' });
+    }
+};
+
 module.exports = {
     createBooking,
     getMyBookings,
     getRestaurantBookings,
-    cancelBooking
+    cancelBooking,
+    createOrder
 };

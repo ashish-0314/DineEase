@@ -7,7 +7,17 @@ const bookingSchema = new mongoose.Schema({
     timeSlot: { type: String, required: true }, // e.g., "19:00"
     numberOfGuests: { type: Number, required: true },
     specialRequest: { type: String },
-    status: { type: String, enum: ['pending', 'confirmed', 'cancelled'], default: 'confirmed' }
+    preOrderedItems: [{
+        name: { type: String },
+        price: { type: Number },
+        quantity: { type: Number }
+    }],
+    payment: {
+        status: { type: String, enum: ['pending', 'paid', 'failed'], default: 'pending' },
+        transactionId: { type: String },
+        orderId: { type: String }
+    },
+    status: { type: String, enum: ['pending', 'confirmed', 'cancelled'], default: 'pending' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);

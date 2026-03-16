@@ -4,6 +4,8 @@ import { Toaster } from 'sonner';
 // Components
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
+import GlobalBackButton from './components/GlobalBackButton';
+import Footer from './components/Footer';
 
 // Pages
 import Home from './pages/Home';
@@ -24,6 +26,7 @@ function App() {
       <div className="min-h-screen flex flex-col font-sans text-gray-900 bg-gray-50">
         <Toaster position="top-center" richColors />
         <Navbar />
+        <GlobalBackButton />
         <main className="flex-grow">
           <Routes>
             {/* Public Routes */}
@@ -52,6 +55,7 @@ function App() {
             </Route>
           </Routes>
         </main>
+        <Footer />
       </div>
     </Router>
   );

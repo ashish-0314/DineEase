@@ -2,11 +2,11 @@
 @import "leaflet/dist/leaflet.css";
 
 @theme {
-  --color-primary-50: #fff1f2;
-  --color-primary-100: #ffe4e6;
-  --color-primary-500: #f43f5e;
-  --color-primary-600: #e11d48;
-  --color-primary-700: #be123c;
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
 }
 
 @layer base {

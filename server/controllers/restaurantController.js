@@ -60,9 +60,21 @@ const createRestaurant = async (req, res) => {
 // @access  Public
 const getRestaurants = async (req, res) => {
     try {
-        const { lat, lng, maxDistance = 10000, cuisine } = req.query; // maxDistance in meters
+        const { lat, lng, maxDistance = 10000, cuisine, search, location } = req.query; // maxDistance in meters
 
         let query = { isApproved: true };
+
+        if (location && location !== 'Current Location') {
+            query['location.address'] = { $regex: location, $options: 'i' };
+        }
+
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { description: { $regex: search, $options: 'i' } },
+                { cuisine: { $regex: search, $options: 'i' } }
+            ];
+        }
 
         if (cuisine) {
             query.cuisine = { $regex: cuisine, $options: 'i' };
@@ -138,6 +150,32 @@ const uploadMedia = async (req, res) => {
     }
 };
 
+// @desc    Delete media (photo/video URL) from db
+// @route   PUT /api/restaurants/:id/media/delete
+// @access  Private (Owner)
+const deleteMedia = async (req, res) => {
+    try {
+        const { url } = req.body;
+        if (!url) return res.status(400).json({ message: 'URL is required' });
+
+        const restaurant = await Restaurant.findById(req.params.id);
+        if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
+
+        if (restaurant.ownerId.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        // Remove from DB arrays
+        restaurant.images = restaurant.images.filter(img => img !== url);
+        restaurant.videos = restaurant.videos.filter(vid => vid !== url);
+
+        await restaurant.save();
+        res.status(200).json({ success: true, restaurant });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 // @desc    Parse Menu from Image (AI upload)
 // @route   POST /api/restaurants/menu/parse
 // @access  Private (Owner)
@@ -183,6 +221,7 @@ module.exports = {
     getRestaurants,
     getRestaurantById,
     uploadMedia,
+    deleteMedia,
     parseMenu,
     updateMenu
 };

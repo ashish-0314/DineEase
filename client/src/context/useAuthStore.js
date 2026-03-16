@@ -45,6 +45,13 @@ const useAuthStore = create((set) => ({
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         set({ user: null, token: null, isAuthenticated: false });
+    },
+
+    updateUser: (newUser) => {
+        const currentUser = JSON.parse(localStorage.getItem('user')) || {};
+        const updatedUser = { ...currentUser, ...newUser };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        set({ user: updatedUser });
     }
 }));
 
